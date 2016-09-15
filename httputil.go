@@ -2,7 +2,6 @@
 package htmlutil
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/PuerkitoBio/goquery"
@@ -23,8 +22,4 @@ func GetDoc(url string) (dc *goquery.Document, er error) {
 	}
 
 	return
-}
-
-func main() {
-	fmt.Println("Hello World!")
 }
