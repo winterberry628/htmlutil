@@ -1,0 +1,163 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/PuerkitoBio/goquery"
+)
+
+var titleId string
+var no string
+var noEnd string
+var mes string
+var toonName string
+
+func GetTitle() {
+	resp, err := http.Get("http://comic.naver.com/webtoon/detail.nhn?titleId=" + titleId)
+	defer resp.Body.Close()
+	if err != nil {
+		fmt.Println("목차 로드 실패")
+		panic(err)
+	}
+
+	doc, err := goquery.NewDocumentFromResponse(resp)
+	if err != nil {
+		fmt.Println("목록페이지 파싱 실패")
+		panic(err)
+	}
+
+	toonName = doc.Find("title").Text()
+	toonName = strings.Trim(strings.Split(toonName, ":")[0], " ")
+	fmt.Println(toonName)
+}
+
+func main() {
+	fmt.Println("=======================================================================================================================")
+	fmt.Println("제작 : 손혜림")
+	fmt.Println("프로토타입, Qt인터페이스 미적용, 배포금지")
+	fmt.Println("=======================================================================================================================")
+
+	fmt.Print("웹툰 titleID 입력 : ")
+	fmt.Scanf("%s\n", &titleId)
+	if titleId == "" {
+		panic("타이틀 아이디 입력안함")
+	}
+
+	GetTitle()
+
+	fmt.Print("시작 화수(기본;1) : ")
+	fmt.Scanf("%s\n", &no)
+	if no == "" {
+		no = "1"
+	}
+
+	fmt.Print("몇화까지 받을껀데(기본;최신화수) : ")
+	fmt.Scanf("%s\n", &noEnd)
+	if noEnd == "" {
+		noEnd = "9999999999999"
+	}
+
+	no_int, _ := strconv.Atoi(no)
+	noEnd_int, _ := strconv.Atoi(noEnd)
+
+	for {
+		toon_url := "http://comic.naver.com/webtoon/detail.nhn?titleId=" + titleId + "&no=" + no
+
+		resp, err := http.Get(toon_url)
+		defer resp.Body.Close()
+		if err != nil {
+			mes = "페이지 로드 실패"
+			break
+		}
+
+		doc, err := goquery.NewDocumentFromResponse(resp)
+		if err != nil {
+			mes = "돔 추출 불가"
+			break
+		}
+
+		if no == strconv.Itoa(noEnd_int+1) {
+			mes = "<성공. 엔터치면 종료>"
+			break
+		}
+
+		if doc.Find("span.wrt_nm").Text() != "" {
+			// 디렉토리 생성
+			var dirName = "./" + toonName + string(os.PathSeparator) + no + "화"
+			os.Mkdir("./"+toonName, 0777)
+			os.Mkdir(dirName, 0777)
+
+			imgs := doc.Find("div.wt_viewer img")
+			var imgUrl string
+			imgs.Each(func(i int, ele *goquery.Selection) {
+				imgUrl, _ = ele.Attr("src")
+				ImgDownload(imgUrl, dirName)
+			})
+		} else {
+			mes = "<성공. 엔터치면 종료>"
+			break
+		}
+
+		no_int++
+		no = strconv.Itoa(no_int)
+	}
+
+	fmt.Println(mes)
+	fmt.Scanln()
+}
+
+func ImgDownload(rawURL string, dir string) {
+	fileURL, err := url.Parse(rawURL)
+	if err != nil {
+		fmt.Println("이미지 URL 파싱 불가")
+		panic(err)
+	}
+	path := fileURL.Path
+	//fmt.Println(path)
+	segments := strings.Split(path, "/")
+	fileName := segments[4]
+	underbarCount := len(strings.Split(fileName, "_"))
+	fileName = strings.Split(fileName, "_")[underbarCount-1]
+	fileName = dir + "/" + fileName
+
+	file, err := os.Create(fileName)
+	defer file.Close()
+	if err != nil {
+		fmt.Println("파일생성불가 : ", err)
+		panic(err)
+	}
+
+	data := url.Values{}
+
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", rawURL, bytes.NewBufferString(data.Encode()))
+	req.Header.Add("User-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.106 Safari/537.36")
+	req.Header.Add("Accept-Encoding", "gzip, deflate, sdch")
+	req.Header.Add("Accept", "image/webp,image/*,*/*;q=0.8")
+	req.Header.Add("Accept-Language", "ko-KR,ko;q=0.8,en-US;q=0.6,en;q=0.4")
+	req.Header.Add("Referer", "http://comic.naver.com/webtoon/detail.nhn?titleId="+titleId+"&no="+no)
+
+	resp, err := client.Do(req)
+
+	if err != nil {
+		fmt.Println(err)
+		panic(err)
+	}
+	defer resp.Body.Close()
+	//fmt.Println(resp.Status)
+
+	size, err := io.Copy(file, resp.Body)
+
+	if err != nil {
+		panic(err)
+	}
+	//fmt.Println(resp.Header)
+	fmt.Println(fileName, "이미지", size, "바이트 다운로드")
+}
